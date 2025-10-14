@@ -1,0 +1,462 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width,initial-scale=1" />
+  <title>Food Orders Dashboard</title>
+
+  <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet">
+  <link href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.10.5/font/bootstrap-icons.css" rel="stylesheet">
+
+  <script src="https://cdn.jsdelivr.net/npm/chart.js@4.3.0/dist/chart.umd.min.js"></script>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/PapaParse/5.3.2/papaparse.min.js"></script>
+
+  <style>
+    :root{--accent:#0d6efd;--green:#22c55e;--orange:#f97316}
+    body{background:#f6f8fb;font-family:Inter,system-ui,-apple-system,'Segoe UI',Roboto,'Helvetica Neue',Arial}
+    .container-lg{max-width:1400px}
+    .card{border:0;border-radius:12px}
+    .stat-card{min-height:88px}
+    .small-muted{font-size:0.85rem;color:#6c757d}
+    .clickable{cursor:pointer}
+    tr.active-row { background:#e7f1ff !important; }
+    #customerTable thead th { background-color: #1a3958; color: white; text-align:center; }
+    #detailsTable thead th { background-color: #1a3958; color: white; }
+    footer{margin-top:30px}
+    .table-fixed { table-layout: fixed; word-wrap: break-word; }
+    #customerTable td { white-space: normal; }
+    
+    .doughnut-chart-container {
+        position: relative;
+        height: 280px;
+        width: 100%;
+        margin: auto;
+    }
+
+    /* [FIXED] Set a specific height to ensure alignment with right column content */
+    .top-items-container {
+        height: 410px; /* Adjusted height */
+        overflow: auto;
+        position: relative;
+    }
+
+    .day-filter {
+      cursor: pointer; padding: 5px 15px; border-radius: 25px; font-size: 0.85rem;
+      border: 1px solid #dee2e6; background-color: #f8f9fa; color: #495057;
+      transition: all 0.2s; font-weight: 500;
+    }
+    .day-filter:hover { background-color: #e9ecef; }
+    .day-filter.active { background-color: var(--accent); color: white; border-color: var(--accent); font-weight: 600; }
+
+    .actionable-list-container {
+        max-height: 180px;
+        overflow-y: auto;
+        font-size: 0.9rem;
+    }
+    .actionable-list-item {
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
+        padding: 8px 5px;
+        border-bottom: 1px solid #f0f0f0;
+    }
+    .actionable-list-item:last-child { border-bottom: none; }
+    .actionable-list-item div:first-child { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; padding-right: 10px; }
+    .actionable-list-item .customer-name { font-weight: 600; }
+    .actionable-list-item .order-details { font-size: 0.8rem; color: #6c757d; }
+
+    .customer-table-container {
+        height: 400px;
+        overflow-y: auto;
+        overflow-x: hidden;
+    }
+  </style>
+</head>
+<body>
+  <div id="loginOverlay" style="position:fixed;top:0;left:0;right:0;bottom:0;background:#f6f8fb;display:flex;align-items:center;justify-content:center;z-index:3000;">
+    <div style="background:white;padding:30px;border-radius:12px;box-shadow:0 0 15px rgba(0,0,0,0.2);width:340px;text-align:center;">
+      <h3 class="mb-3">Admin Login</h3>
+      <div class="mb-3"><input type="text" id="loginUser" class="form-control" placeholder="Username"></div>
+      <div class="mb-3 position-relative">
+        <input type="password" id="loginPass" class="form-control" placeholder="Password">
+        <i id="togglePass" class="bi bi-eye-fill position-absolute" style="top:50%;right:10px;transform:translateY(-50%);cursor:pointer"></i>
+      </div>
+      <button class="btn btn-primary w-100 mb-2" onclick="login()">Login</button>
+      <div id="loginError" class="text-danger small mt-2"></div>
+    </div>
+  </div>
+
+  <div id="loadingOverlay" style="display:none;position:fixed;left:0;top:0;right:0;bottom:0;background:rgba(255,255,255,0.75);display:flex;align-items:center;justify-content:center;z-index:2000;backdrop-filter:blur(2px)">
+    <div class="text-center">
+      <div class="spinner-border text-primary" role="status"></div>
+      <div class="mt-2 small-muted">Loading sheets...</div>
+    </div>
+  </div>
+
+  <nav class="navbar navbar-light bg-white shadow-sm mb-4">
+    <div class="container-lg d-flex align-items-center">
+      <a class="navbar-brand d-flex align-items-center gap-2" href="#">
+        <i class="bi bi-egg-fried" style="font-size:1.5rem;color:var(--accent)"></i>
+        <div>
+          <div style="font-weight:700">Food Orders Dashboard</div>
+          
+        </div>
+      </a>
+      <div class="ms-auto d-flex align-items-center gap-3">
+        <div class="small-muted">Auto-refresh every 2 minutes</div>
+        <button class="btn btn-sm btn-outline-danger" onclick="logout()">Logout</button>
+      </div>
+    </div>
+  </nav>
+
+  <main class="container-lg" id="dashboard" style="display:none;">
+    <div id="summaryView">
+      <div class="row g-3 mb-3">
+        <div class="col-6 col-md-3">
+          <div class="card p-3 stat-card shadow-sm d-flex align-items-center justify-content-between flex-row">
+            <div class="text-start me-2">
+              <div class="small-muted">Total Sales</div>
+              <div id="totalSales" class="fw-bold fs-5">—</div>
+            </div>
+            <i class="bi bi-cash-stack fs-3 text-primary"></i>
+          </div>
+        </div>
+
+        <div class="col-6 col-md-3">
+          <div class="card p-3 stat-card shadow-sm d-flex align-items-center justify-content-between flex-row">
+            <div class="text-start me-2">
+              <div class="small-muted">Total Customers</div>
+              <div id="totalCustomers" class="fw-bold fs-5">—</div>
+            </div>
+            <i class="bi bi-people fs-3 text-success"></i>
+          </div>
+        </div>
+
+        <div class="col-6 col-md-3">
+          <div class="card p-3 stat-card shadow-sm d-flex align-items-center justify-content-between flex-row">
+            <div class="text-start me-2">
+              <div class="small-muted">Unclaimed Orders</div>
+              <div id="unclaimedOrders" class="fw-bold fs-5">—</div>
+            </div>
+            <i class="bi bi-inbox fs-3 text-warning"></i>
+          </div>
+        </div>
+
+        <div class="col-6 col-md-3">
+          <div class="card p-3 stat-card shadow-sm d-flex align-items-center justify-content-between flex-row">
+            <div class="text-start me-2">
+              <div class="small-muted">Unpaid Utang</div>
+              <div id="unpaidUtang" class="fw-bold fs-5">—</div>
+            </div>
+            <i class="bi bi-wallet fs-3 text-secondary"></i>
+          </div>
+        </div>
+      </div>
+      
+      <div class="row g-3 mb-3">
+        <div class="col-6 col-md-3">
+          <div class="card p-3 stat-card shadow-sm d-flex align-items-center justify-content-between flex-row">
+            <div class="text-start me-2">
+              <div class="small-muted">Avg. Order Value</div>
+              <div id="avgOrderValue" class="fw-bold fs-5">—</div>
+            </div>
+            <i class="bi bi-receipt-cutoff fs-3 text-info"></i>
+          </div>
+        </div>
+        <div class="col-6 col-md-3">
+          <div class="card p-3 stat-card shadow-sm d-flex align-items-center justify-content-between flex-row">
+            <div class="text-start me-2">
+              <div class="small-muted">Total Items Sold</div>
+              <div id="totalItemsSold" class="fw-bold fs-5">—</div>
+            </div>
+            <i class="bi bi-box-seam fs-3" style="color: #6f42c1;"></i>
+          </div>
+        </div>
+        <div class="col-6 col-md-3">
+          <div class="card p-3 stat-card shadow-sm d-flex align-items-center justify-content-between flex-row">
+            <div class="text-start me-2">
+              <div class="small-muted">Busiest Day</div>
+              <div id="busiestDay" class="fw-bold fs-5">—</div>
+            </div>
+            <i class="bi bi-calendar-check fs-3 text-danger"></i>
+          </div>
+        </div>
+        <div class="col-6 col-md-3">
+          <div class="card p-3 stat-card shadow-sm d-flex align-items-center justify-content-between flex-row">
+            <div class="text-start me-2">
+              <div class="small-muted">Top Spender</div>
+              <div id="topSpender" class="fw-bold fs-5" style="white-space:nowrap;overflow:hidden;text-overflow:ellipsis;">—</div>
+            </div>
+            <i class="bi bi-person-check-fill fs-3" style="color: #fd7e14;"></i>
+          </div>
+        </div>
+      </div>
+
+      <div class="row g-3 mb-3">
+        <div class="col-md-8">
+          <div class="card p-3 shadow-sm h-100">
+            <div class="d-flex justify-content-between align-items-center mb-2">
+              <div class="fw-bold">Sales Overview</div>
+              <div class="small-muted">By day</div>
+            </div>
+            <canvas id="salesByDay" height="120"></canvas>
+            <hr>
+            <div class="row">
+              <div class="col-md-6">
+                <div class="d-flex justify-content-between align-items-center mb-2">
+                  <div class="fw-bold">Payment Mode</div>
+                  <div class="small-muted">Click legend to toggle</div>
+                </div>
+                <div class="doughnut-chart-container">
+                  <canvas id="paymentModeChart"></canvas>
+                </div>
+              </div>
+              <div class="col-md-6">
+                <div class="d-flex justify-content-between align-items-center mb-2">
+                  <div class="fw-bold">Order Status</div>
+                  <div class="small-muted">Claimed vs Unclaimed</div>
+                </div>
+                <div class="doughnut-chart-container">
+                  <canvas id="orderStatusChart"></canvas>
+                </div>
+              </div>
+            </div>
+            <hr>
+            <div class="d-flex justify-content-between align-items-center mb-2">
+              <div class="fw-bold">Top 10 Most Sold Items</div>
+              <div class="small-muted">By total quantity</div>
+            </div>
+            <div class="top-items-container">
+              <canvas id="topItemsChart"></canvas>
+            </div>
+          </div>
+        </div>
+
+        <div class="col-md-4">
+            <div class="card p-3 shadow-sm h-100">
+                <div>
+                    <div class="d-flex justify-content-between align-items-center mb-2">
+                        <h5 class="fw-bold mb-0">All Customers</h5>
+                    </div>
+                    <div class="mb-2">
+                        <input id="customerSearch" type="text" class="form-control form-control-sm" placeholder="Search all customers...">
+                    </div>
+                    <div class="customer-table-container">
+                        <table class="table table-hover table-fixed mb-0" id="customerTable">
+                            <thead>
+                                <tr><th style="width:65%">Name</th><th style="width:35%" class="text-end">Orders</th></tr>
+                            </thead>
+                            <tbody id="customerTableBody"></tbody>
+                        </table>
+                    </div>
+                </div>
+                <hr>
+                <div class="mb-2">
+                    <h5 class="fw-bold mb-2">Utang, Not Yet Claimed</h5>
+                    <div id="utangNotClaimedList" class="actionable-list-container"></div>
+                </div>
+                <hr>
+                <div>
+                    <h5 class="fw-bold mb-2">Claimed But Unpaid</h5>
+                    <div id="claimedUnpaidList" class="actionable-list-container"></div>
+                </div>
+            </div>
+        </div>
+      </div>
+    </div>
+
+    <div id="customerDetails" style="display:none;">
+      <div class="card p-3 shadow-sm mb-3">
+        <div class="d-flex justify-content-between align-items-center mb-2">
+          <div>
+            <button class="btn btn-sm btn-outline-secondary me-2" onclick="backToSummary()">← Back</button>
+            <span id="customerTitle" class="fw-bold"></span>
+            <div id="customerMeta" class="small-muted"></div>
+          </div>
+          <div class="small-muted">Aggregated Mon–Fri</div>
+        </div>
+        <div id="dayFilterContainer" class="mb-3 d-flex flex-wrap gap-2"></div>
+        <div class="table-responsive" style="max-height:65vh; overflow:auto;">
+          <table class="table table-sm table-hover mb-0" id="detailsTable">
+            <thead>
+              <tr>
+                <th>Date</th><th>Items</th><th class="text-end">Qty</th><th class="text-end">Total</th>
+                <th>Payment Mode</th><th>Status</th><th>Received By</th><th>Utang Status</th><th>Paid Date</th>
+              </tr>
+            </thead>
+            <tbody id="detailsBody"></tbody>
+          </table>
+        </div>
+      </div>
+    </div>
+  </main>
+
+  <footer style="text-align:center;color:gray;font-family:'Courier New',Courier,monospace;font-size:small;font-weight:bold;">&copy;2025 Food Orders Dashboard</footer>
+
+  <script>
+    const CSV_LINKS = {
+      monday: 'https://docs.google.com/spreadsheets/d/e/2PACX-1vTYV5LpeYrDkaCSfqsOKaaibg9xJVOB3E0vMlwjAllLIE1DYPUNZi9s3t3dITcQ1qDAhLV_OCCGOC2u/pub?gid=0&single=true&output=csv',
+      tuesday: 'https://docs.google.com/spreadsheets/d/e/2PACX-1vTYV5LpeYrDkaCSfqsOKaaibg9xJVOB3E0vMlwjAllLIE1DYPUNZi9s3t3dITcQ1qDAhLV_OCCGOC2u/pub?gid=440834532&single=true&output=csv',
+      wednesday: 'https://docs.google.com/spreadsheets/d/e/2PACX-1vTYV5LpeYrDkaCSfqsOKaaibg9xJVOB3E0vMlwjAllLIE1DYPUNZi9s3t3dITcQ1qDAhLV_OCCGOC2u/pub?gid=553554844&single=true&output=csv',
+      thursday: 'https://docs.google.com/spreadsheets/d/e/2PACX-1vTYV5LpeYrDkaCSfqsOKaaibg9xJVOB3E0vMlwjAllLIE1DYPUNZi9s3t3dITcQ1qDAhLV_OCCGOC2u/pub?gid=1162168525&single=true&output=csv',
+      friday: 'https://docs.google.com/spreadsheets/d/e/2PACX-1vTYV5LpeYrDkaCSfqsOKaaibg9xJVOB3E0vMlwjAllLIE1DYPUNZi9s3t3dITcQ1qDAhLV_OCCGOC2u/pub?gid=1865614206&single=true&output=csv'
+    };
+    var _0x1a2b = ["YWRtaW4=", "YWRtaW4xMjMhQCM="];
+    function _0x3c4d(i){ return atob(_0x1a2b[i]); }
+    let allRows = [], customersMap = {};
+    let salesChart, paymentChart, orderStatusChart, topItemsChart, refreshTimer;
+    function showLoading(){document.getElementById('loadingOverlay').style.display='flex';}
+    function hideLoading(){document.getElementById('loadingOverlay').style.display='none';}
+    function showDashboard(){ document.getElementById('loginOverlay').style.display='none'; document.getElementById('dashboard').style.display='block'; }
+    function backToSummary(){ document.getElementById('customerDetails').style.display = 'none'; document.getElementById('summaryView').style.display = 'block'; document.querySelectorAll('#customerTable tbody tr').forEach(r=>r.classList.remove('active-row')); }
+    function capitalize(s){ return s.charAt(0).toUpperCase() + s.slice(1); }
+    function login(){
+      const u = document.getElementById('loginUser').value, p = document.getElementById('loginPass').value;
+      if(u === _0x3c4d(0) && p === _0x3c4d(1)){
+        localStorage.setItem('loggedIn','true');
+        showDashboard();
+        (async () => { await loadAllSheetsInternal(); startAutoRefresh(); })();
+      } else { document.getElementById('loginError').textContent = 'Incorrect username or password'; }
+    }
+    function logout(){ localStorage.removeItem('loggedIn'); location.reload(); }
+    document.getElementById('togglePass').addEventListener('click', () => {
+      const p = document.getElementById('loginPass'), icon = document.getElementById('togglePass');
+      if(p.type === 'password'){ p.type='text'; icon.classList.replace('bi-eye-fill','bi-eye-slash-fill'); } else { p.type='password'; icon.classList.replace('bi-eye-slash-fill','bi-eye-fill'); }
+    });
+    ['loginUser','loginPass'].forEach(id => { document.getElementById(id).addEventListener('keydown', (e)=>{ if(e.key==='Enter') login(); }); });
+    if(localStorage.getItem('loggedIn') === 'true'){ showDashboard(); (async () => { await loadAllSheetsInternal(); startAutoRefresh(); })(); }
+    async function fetchCsv(url){ return new Promise((resolve, reject) => { Papa.parse(url, { download: true, header: true, skipEmptyLines: true, complete: (res) => resolve(res.data), error: (err) => reject(err) }); }); }
+    function normalizeRow(raw){ const row = {}; Object.entries(raw).forEach(([k,v]) => { row[String(k||'').trim()] = String(v||'').trim(); }); return row; }
+    function parseFloatSafe(v){ v = String(v||'').replace(/[^0-9\.\-]+/g,''); return v?parseFloat(v):0; }
+    function isClaimed(row){ const status = (row['Order Status']||row['STATUS']||'').toLowerCase(); if(!status) return false; const keywords = ['received','claimed','collected','done','paid']; return keywords.some(k=>status.includes(k)); }
+    function isCancelled(row) { const status = (row['Order Status'] || row['STATUS'] || '').toLowerCase(); if (!status) return false; const cancelledKeywords = ['cancel', 'cancelled']; return cancelledKeywords.some(k => status.includes(k)); }
+    function isUnclaimed(row) { return !isClaimed(row) && !isCancelled(row); }
+    function isUnpaidUtang(row){
+      const ut = (row['Utang Status']||'').toLowerCase(), mode = (row['Mode of Payment']||row['Payment Mode']||'').toLowerCase(), paidDate = (row['Paid Date']||'').trim();
+      if(ut && (ut.includes('utang') || ut.includes('unpaid') || ut.includes('owing'))) return true;
+      if(mode.includes('utang') && !paidDate) return true;
+      const utangStatusIsBlank = !ut.trim();
+      if(mode.includes('utang') && isClaimed(row) && utangStatusIsBlank) return true;
+      return false;
+    }
+    function isUtangNotClaimed(row) { const mode = (row['Mode of Payment'] || row['Payment Mode'] || '').toLowerCase(); return mode.includes('utang') && isUnclaimed(row); }
+    async function loadAllSheetsInternal(){
+      try{
+        showLoading();
+        const keys = Object.keys(CSV_LINKS);
+        const promises = keys.map(k => fetchCsv(CSV_LINKS[k]).then(rows => rows.map(r=>({__day:k, ...normalizeRow(r)}))).catch(err => { console.warn(`Sheet load failed for ${k}`, err); return []; }));
+        const results = await Promise.all(promises);
+        allRows = results.flat().filter(r => Object.keys(r).length > 1 && (r.NAME || r.Name || r.name));
+        buildCustomersMap();
+        renderSummary();
+        renderActionableLists();
+        renderCustomerList();
+        renderCharts();
+        const activeName = document.getElementById('customerTitle').textContent;
+        if(activeName) showCustomerHistory(activeName);
+      } catch(err){ console.error('Load error', err); } finally{ hideLoading(); }
+    }
+    window.reloadSheets = async () => { await loadAllSheetsInternal(); };
+    function buildCustomersMap(){ customersMap = {}; allRows.forEach(r => { const name = (r['NAME'] || r['Name'] || r['name'] || '').trim(); if(!name) return; if(!customersMap[name]) customersMap[name] = []; customersMap[name].push(r); }); }
+    function numberToMoney(n){ return '₱' + (Number(n)||0).toLocaleString(undefined,{minimumFractionDigits:2,maximumFractionDigits:2}); }
+    function renderSummary(){
+      const totalSales = allRows.reduce((s,row) => s + parseFloatSafe(row['Total']||row['total']||row['Cost']||0), 0);
+      document.getElementById('totalSales').textContent = numberToMoney(totalSales);
+      document.getElementById('totalCustomers').textContent = Object.keys(customersMap).length;
+      const unclaimedCount = allRows.filter(row => isUnclaimed(row) && (row.NAME || row.Name || row.name || '').trim() !== '').length;
+      document.getElementById('unclaimedOrders').textContent = unclaimedCount;
+      const unpaidOrders = allRows.filter(isUnpaidUtang);
+      document.getElementById('unpaidUtang').textContent = `${unpaidOrders.length} (${numberToMoney(unpaidOrders.reduce((s,r)=> s + parseFloatSafe(r.Total||r.total||0), 0))})`;
+      const totalOrders = allRows.length;
+      document.getElementById('avgOrderValue').textContent = numberToMoney(totalOrders > 0 ? totalSales / totalOrders : 0);
+      document.getElementById('totalItemsSold').textContent = allRows.reduce((s,r) => s + parseFloatSafe(r['QTY']||r.Qty||r.qty||1), 0).toLocaleString();
+      const daySales = Object.keys(CSV_LINKS).map(day => ({ day, sales: allRows.filter(r => r.__day === day).reduce((s,r) => s + parseFloatSafe(r.Total||r.total||0), 0) })).sort((a,b) => b.sales - a.sales);
+      if (daySales.length > 0 && daySales[0].sales > 0) { document.getElementById('busiestDay').innerHTML = `${capitalize(daySales[0].day)} <small class="small-muted">(${numberToMoney(daySales[0].sales)})</small>`; } else { document.getElementById('busiestDay').textContent = '—'; }
+      const topSpenders = Object.entries(customersMap).map(([name, orders]) => ({ name, total: orders.reduce((s,r) => s + parseFloatSafe(r.Total||r.total||0),0) })).sort((a,b) => b.total - a.total);
+      if (topSpenders.length > 0 && topSpenders[0].total > 0) { document.getElementById('topSpender').innerHTML = `${topSpenders[0].name} <small class="small-muted">(${numberToMoney(topSpenders[0].total)})</small>`; } else { document.getElementById('topSpender').textContent = '—'; }
+    }
+    function renderActionableLists() {
+        const claimedUnpaidContainer = document.getElementById('claimedUnpaidList');
+        const utangNotClaimedContainer = document.getElementById('utangNotClaimedList');
+        claimedUnpaidContainer.innerHTML = '';
+        utangNotClaimedContainer.innerHTML = '';
+        const claimedUnpaidOrders = allRows.filter(o => isClaimed(o) && isUnpaidUtang(o));
+        const utangNotClaimedOrders = allRows.filter(isUtangNotClaimed);
+        const createListItem = (order) => {
+            const name = order['NAME'] || order['Name'] || 'Unknown', total = parseFloatSafe(order.Total||order.total||0), items = order.ITEMS || order.Items || 'No items listed', day = order.__day || 'N/A';
+            const item = document.createElement('div');
+            item.className = 'actionable-list-item clickable';
+            item.innerHTML = `<div><div class="customer-name">${escapeHtml(name)}</div><div class="order-details"><b>${capitalize(day.substring(0,3))}</b> &bull; ${escapeHtml(items)}</div></div><div class="fw-bold text-nowrap">${numberToMoney(total)}</div>`;
+            item.onclick = () => { const mainRow = [...document.querySelectorAll('#customerTableBody tr')].find(tr => tr.querySelector('td:first-child b').textContent === name); if(mainRow) mainRow.click(); else showCustomerHistory(name); };
+            return item;
+        };
+        if (claimedUnpaidOrders.length > 0) { claimedUnpaidOrders.sort((a,b) => parseFloatSafe(b.Total||0) - parseFloatSafe(a.Total||0)).forEach(o => claimedUnpaidContainer.appendChild(createListItem(o))); } else { claimedUnpaidContainer.innerHTML = '<div class="small-muted p-2 text-center">No orders match this criteria.</div>'; }
+        if (utangNotClaimedOrders.length > 0) { utangNotClaimedOrders.sort((a,b) => parseFloatSafe(b.Total||0) - parseFloatSafe(a.Total||0)).forEach(o => utangNotClaimedContainer.appendChild(createListItem(o))); } else { utangNotClaimedContainer.innerHTML = '<div class="small-muted p-2 text-center">No orders match this criteria.</div>'; }
+    }
+    function renderCustomerList(){
+      const tbody = document.getElementById('customerTableBody'), search = (document.getElementById('customerSearch').value||'').toLowerCase();
+      tbody.innerHTML = '';
+      Object.entries(customersMap).map(([name,arr]) => ({name, count: arr.length, total: arr.reduce((s,r)=> s + parseFloatSafe(r.Total||r.total||0),0)})).filter(r => !search || r.name.toLowerCase().includes(search)).sort((a,b) => b.count - a.count || b.total - a.total).forEach(r => {
+        const tr = document.createElement('tr');
+        tr.className = 'clickable';
+        tr.innerHTML = `<td><b>${escapeHtml(r.name)}</b><div class="small-muted">${r.total? numberToMoney(r.total): ''}</div></td><td class="text-end">${r.count}</td>`;
+        tr.onclick = () => { document.querySelectorAll('#customerTable tbody tr').forEach(x=>x.classList.remove('active-row')); tr.classList.add('active-row'); showCustomerHistory(r.name); };
+        tbody.appendChild(tr);
+      });
+    }
+    document.getElementById('customerSearch').addEventListener('input', renderCustomerList);
+    function escapeHtml(text){ return String(text||'').replace(/[&<>"']/g, m => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#039;'}[m])); }
+    function populateDetailsTable(rows, dayFilter) {
+        const tbody = document.getElementById('detailsBody');
+        tbody.innerHTML = '';
+        const filteredRows = dayFilter === 'all' ? rows : rows.filter(r => r.__day === dayFilter);
+        filteredRows.forEach(r => {
+            const date = r.Date||r.date||'', items = r.ITEMS||r.Items||'', qty = r.QTY||r.Qty||'', total = numberToMoney(parseFloatSafe(r.Total||r.total||0)), mode = (r['Mode of Payment']||r['Payment Mode']||'').trim() || 'Unspecified', status = r['Order Status']||r.STATUS||'', receivedBy = r['Received By']||'', utang = r['Utang Status']||'', paidDate = r['Paid Date']||'';
+            const tr = document.createElement('tr');
+            tr.innerHTML = `<td>${escapeHtml(date)}</td><td style="max-width:240px">${escapeHtml(items)}</td><td class="text-end">${escapeHtml(qty)}</td><td class="text-end">${total}</td><td>${escapeHtml(mode)}</td><td>${escapeHtml(status)}</td><td>${escapeHtml(receivedBy)}</td><td>${escapeHtml(utang)}</td><td>${escapeHtml(paidDate)}</td>`;
+            tbody.appendChild(tr);
+        });
+    }
+    function showCustomerHistory(name) {
+        const rows = (customersMap[name] || []).sort((a, b) => new Date(b.Date||b.date||0) - new Date(a.Date||a.date||0));
+        document.getElementById('summaryView').style.display = 'none';
+        document.getElementById('customerDetails').style.display = 'block';
+        document.getElementById('customerTitle').textContent = name;
+        document.getElementById('customerMeta').textContent = `${rows.length} order(s) • Total: ${numberToMoney(rows.reduce((s, r) => s + parseFloatSafe(r.Total||r.total||0), 0))}`;
+        const filterContainer = document.getElementById('dayFilterContainer');
+        filterContainer.innerHTML = '';
+        ['all', ...Object.keys(CSV_LINKS)].forEach(day => {
+            const btn = document.createElement('span');
+            btn.className = 'day-filter';
+            btn.textContent = capitalize(day);
+            if (day === 'all') btn.classList.add('active');
+            btn.onclick = () => { filterContainer.querySelectorAll('.day-filter').forEach(b => b.classList.remove('active')); btn.classList.add('active'); populateDetailsTable(rows, day); };
+            filterContainer.appendChild(btn);
+        });
+        populateDetailsTable(rows, 'all');
+    }
+    function renderCharts(){
+      const dayKeys = Object.keys(CSV_LINKS);
+      const salesByDay = dayKeys.map(k => allRows.filter(r => r.__day === k).reduce((s,r) => s + parseFloatSafe(r.Total||r.total||0), 0));
+      const modeCounts = {};
+      allRows.forEach(r => { const mode = (r['Mode of Payment']||r['Payment Mode']||'').trim() || 'Unspecified'; modeCounts[mode] = (modeCounts[mode]||0) + parseFloatSafe(r.Total||r.total||0); });
+      const statusCounts = { Claimed: 0, Unclaimed: 0, Other: 0, Cancelled: 0 };
+      allRows.forEach(r => { 
+        if(isCancelled(r)) { statusCounts.Cancelled++; } 
+        else if(isClaimed(r)) { statusCounts.Claimed++; } 
+        else { const status = (r['Order Status']||r.STATUS||'').toLowerCase(); const ongoing = ['ongoing','pending','open','in progress','todo']; if(ongoing.some(k=>status.includes(k))) { statusCounts.Other++; } else { statusCounts.Unclaimed++; } } 
+      });
+      const itemsMap = {};
+      allRows.forEach(r => { const itemsRaw = (r.ITEMS||r.Items||'').trim(), qtyVal = parseFloatSafe(r.QTY||r.Qty||1); if(!itemsRaw) return; const candidates = itemsRaw.split(/\s*[,;]\s*/).filter(Boolean); if(candidates.length === 1){ const m = candidates[0].match(/(.+?)\s*[xX×]\s*(\d+)$/); if(m) { itemsMap[m[1].trim()] = (itemsMap[m[1].trim()]||0) + parseInt(m[2],10); } else { itemsMap[candidates[0].trim()] = (itemsMap[candidates[0].trim()]||0) + qtyVal; } } else { candidates.forEach(i => { if(i.trim()) itemsMap[i.trim()] = (itemsMap[i.trim()]||0) + qtyVal; }); } });
+      const topItemsArr = Object.entries(itemsMap).map(([name,q])=>({name,qty:q})).sort((a,b)=>b.qty-a.qty).slice(0,10);
+      const chartConfig = (ctx, type, data, options) => { let chartVar = window[ctx.canvas.id + 'Chart']; if(chartVar) chartVar.destroy(); window[ctx.canvas.id + 'Chart'] = new Chart(ctx, { type, data, options }); };
+      chartConfig(document.getElementById('salesByDay').getContext('2d'), 'bar', { labels: dayKeys.map(capitalize), datasets: [{ label: 'Sales', data: salesByDay, backgroundColor: 'rgba(13,110,253,0.7)' }] }, { plugins:{legend:{display:false}}, scales:{y:{beginAtZero:true,ticks:{callback:v=>'₱'+Number(v).toLocaleString()}}} });
+      chartConfig(document.getElementById('paymentModeChart').getContext('2d'), 'doughnut', { labels: Object.keys(modeCounts), datasets:[{ data: Object.values(modeCounts), cutout: '60%' }] }, { plugins:{ legend:{position:'bottom', labels:{boxWidth:12,padding:10}} }, layout:{padding:10}, maintainAspectRatio:false });
+      chartConfig(document.getElementById('orderStatusChart').getContext('2d'), 'doughnut', { labels: ['Claimed','Unclaimed','Other', 'Cancelled'], datasets: [{ data: [statusCounts.Claimed, statusCounts.Unclaimed, statusCounts.Other, statusCounts.Cancelled], cutout: '60%' }] }, { plugins:{ legend:{position:'bottom', labels:{boxWidth:12,padding:10}} }, layout:{padding:10}, maintainAspectRatio:false });
+      chartConfig(document.getElementById('topItemsChart').getContext('2d'), 'bar', { labels: topItemsArr.map(i=>i.name), datasets: [{ label: 'Qty sold', data: topItemsArr.map(i=>i.qty), backgroundColor: 'rgba(54,162,235,0.85)' }] }, { indexAxis: 'y', plugins:{legend:{display:false}}, scales: { x:{beginAtZero:true, ticks:{precision:0}}, y:{ticks:{autoSkip:false}} }, maintainAspectRatio: false });
+    }
+    function startAutoRefresh(){ if(refreshTimer) clearInterval(refreshTimer); refreshTimer = setInterval(loadAllSheetsInternal, 120000); }
+  </script>
+  <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/js/bootstrap.bundle.min.js"></script>
+</body>
+</html>
