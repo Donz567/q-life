@@ -20,8 +20,17 @@
     .small-muted{font-size:0.85rem;color:#6c757d}
     .clickable{cursor:pointer}
     tr.active-row { background:#e7f1ff !important; }
-    #customerTable thead th { background-color: #1a3958; color: white; text-align:center; }
+    
+    /* [MODIFIED] Added sticky positioning for table headers */
+    #customerTable thead th, #itemReportTable thead th { 
+        background-color: #1a3958; 
+        color: white; 
+        position: sticky;
+        top: 0;
+        z-index: 1;
+    }
     #detailsTable thead th { background-color: #1a3958; color: white; }
+    
     footer{margin-top:30px}
     .table-fixed { table-layout: fixed; word-wrap: break-word; }
     #customerTable td { white-space: normal; }
@@ -33,9 +42,8 @@
         margin: auto;
     }
 
-    /* [FIXED] Set a specific height to ensure alignment with right column content */
     .top-items-container {
-        height: 410px; /* Adjusted height */
+        height: 410px;
         overflow: auto;
         position: relative;
     }
@@ -70,6 +78,12 @@
         overflow-y: auto;
         overflow-x: hidden;
     }
+
+    /* [MODIFIED] Aligns with sales overview chart area */
+    .item-report-container {
+        max-height: 375px; 
+        overflow-y: auto;
+    }
   </style>
 </head>
 <body>
@@ -99,7 +113,6 @@
         <i class="bi bi-egg-fried" style="font-size:1.5rem;color:var(--accent)"></i>
         <div>
           <div style="font-weight:700">Q-LIFE Dashboard</div>
-          
         </div>
       </a>
       <div class="ms-auto d-flex align-items-center gap-3">
@@ -121,7 +134,6 @@
             <i class="bi bi-cash-stack fs-3 text-primary"></i>
           </div>
         </div>
-
         <div class="col-6 col-md-3">
           <div class="card p-3 stat-card shadow-sm d-flex align-items-center justify-content-between flex-row">
             <div class="text-start me-2">
@@ -131,7 +143,6 @@
             <i class="bi bi-people fs-3 text-success"></i>
           </div>
         </div>
-
         <div class="col-6 col-md-3">
           <div class="card p-3 stat-card shadow-sm d-flex align-items-center justify-content-between flex-row">
             <div class="text-start me-2">
@@ -141,7 +152,6 @@
             <i class="bi bi-inbox fs-3 text-warning"></i>
           </div>
         </div>
-
         <div class="col-6 col-md-3">
           <div class="card p-3 stat-card shadow-sm d-flex align-items-center justify-content-between flex-row">
             <div class="text-start me-2">
@@ -195,11 +205,35 @@
       <div class="row g-3 mb-3">
         <div class="col-md-8">
           <div class="card p-3 shadow-sm h-100">
-            <div class="d-flex justify-content-between align-items-center mb-2">
-              <div class="fw-bold">Sales Overview</div>
-              <div class="small-muted">By day</div>
+            <div class="row">
+                <div class="col-lg-6">
+                    <div class="d-flex justify-content-between align-items-center mb-2">
+                        <div class="fw-bold">Sales Overview</div>
+                        <div class="small-muted">By day</div>
+                    </div>
+                    <canvas id="salesByDay" height="280"></canvas>
+                </div>
+                <div class="col-lg-6">
+                    <div class="d-flex justify-content-between align-items-center mb-2">
+                        <h6 class="fw-bold mb-0">Full Item Revenue & Stock Report</h6>
+                        <input id="itemReportSearch" type="text" class="form-control form-control-sm w-50" placeholder="Search items...">
+                    </div>
+                    <div class="item-report-container">
+                        <table class="table table-sm table-hover table-striped mb-0" id="itemReportTable">
+                            <thead>
+                                <tr>
+                                    <th>Item</th>
+                                    <th class="text-end">Sold</th>
+                                    <th class="text-end">Sales</th>
+                                    <th class="text-end">Initial Value</th>
+                                    <th class="text-end">Net</th>
+                                </tr>
+                            </thead>
+                            <tbody id="itemReportBody"></tbody>
+                        </table>
+                    </div>
+                </div>
             </div>
-            <canvas id="salesByDay" height="120"></canvas>
             <hr>
             <div class="row">
               <div class="col-md-6">
@@ -226,7 +260,7 @@
               <div class="fw-bold">Top 10 Most Sold Items</div>
               <div class="small-muted">By total quantity</div>
             </div>
-            <div class="top-items-container">
+            <div class="top-items-container" style="height: 250px;">
               <canvas id="topItemsChart"></canvas>
             </div>
           </div>
@@ -303,7 +337,7 @@
     };
     var _0x1a2b = ["YWRtaW4=", "YWRtaW4xMjMhQCM="];
     function _0x3c4d(i){ return atob(_0x1a2b[i]); }
-    let allRows = [], customersMap = {};
+    let allRows = [], customersMap = {}, inventoryMap = {};
     let salesChart, paymentChart, orderStatusChart, topItemsChart, refreshTimer;
     function showLoading(){document.getElementById('loadingOverlay').style.display='flex';}
     function hideLoading(){document.getElementById('loadingOverlay').style.display='none';}
@@ -344,13 +378,22 @@
       try{
         showLoading();
         const keys = Object.keys(CSV_LINKS);
-        const promises = keys.map(k => fetchCsv(CSV_LINKS[k]).then(rows => rows.map(r=>({__day:k, ...normalizeRow(r)}))).catch(err => { console.warn(`Sheet load failed for ${k}`, err); return []; }));
+        // [MODIFIED] Added more robust error handling
+        const promises = keys.map(k => fetchCsv(CSV_LINKS[k])
+            .then(rows => rows.map(r=>({__day:k, ...normalizeRow(r)})))
+            .catch(err => { 
+                console.error(`ERROR: Failed to load or parse data for ${k}. Please check the sheet link and format.`, err); 
+                return []; // Return empty array on failure so Promise.all doesn't fail completely
+            })
+        );
         const results = await Promise.all(promises);
+        buildInventoryMap(results); 
         allRows = results.flat().filter(r => Object.keys(r).length > 1 && (r.NAME || r.Name || r.name));
         buildCustomersMap();
         renderSummary();
         renderActionableLists();
         renderCustomerList();
+        renderItemReport();
         renderCharts();
         const activeName = document.getElementById('customerTitle').textContent;
         if(activeName) showCustomerHistory(activeName);
@@ -358,6 +401,21 @@
     }
     window.reloadSheets = async () => { await loadAllSheetsInternal(); };
     function buildCustomersMap(){ customersMap = {}; allRows.forEach(r => { const name = (r['NAME'] || r['Name'] || r['name'] || '').trim(); if(!name) return; if(!customersMap[name]) customersMap[name] = []; customersMap[name].push(r); }); }
+    function buildInventoryMap(allSheetData) {
+        inventoryMap = {};
+        if (!allSheetData) return;
+        allSheetData.flat().forEach(row => {
+            const itemName = row['Item Name'];
+            if (itemName && row['Price']) {
+                inventoryMap[itemName.trim()] = {
+                    price: parseFloatSafe(row['Price']),
+                    stocks: parseFloatSafe(row['Stocks']),
+                    available: parseFloatSafe(row['Available Stocks'])
+                };
+            }
+        });
+    }
+
     function numberToMoney(n){ return '₱' + (Number(n)||0).toLocaleString(undefined,{minimumFractionDigits:2,maximumFractionDigits:2}); }
     function renderSummary(){
       const totalSales = allRows.reduce((s,row) => s + parseFloatSafe(row['Total']||row['total']||row['Cost']||0), 0);
@@ -435,6 +493,68 @@
         });
         populateDetailsTable(rows, 'all');
     }
+
+    function calculateItemQuantities() {
+        const itemsMap = {};
+        allRows.forEach(r => {
+            if (isCancelled(r)) return; 
+            const itemsRaw = (r.ITEMS || r.Items || '').trim(), qtyVal = parseFloatSafe(r.QTY || r.Qty || 1);
+            if (!itemsRaw) return;
+            const candidates = itemsRaw.split(/\s*[,;]\s*/).filter(Boolean);
+            if (candidates.length === 1) {
+                const m = candidates[0].match(/(.+?)\s*[xX×]\s*(\d+)$/);
+                if (m) { itemsMap[m[1].trim()] = (itemsMap[m[1].trim()] || 0) + parseInt(m[2], 10); } 
+                else { itemsMap[candidates[0].trim()] = (itemsMap[candidates[0].trim()] || 0) + qtyVal; }
+            } else { candidates.forEach(i => { if (i.trim()) itemsMap[i.trim()] = (itemsMap[i.trim()] || 0) + qtyVal; }); }
+        });
+        return itemsMap;
+    }
+
+    function renderItemReport() {
+        const itemQuantities = calculateItemQuantities();
+        const tbody = document.getElementById('itemReportBody');
+        const search = (document.getElementById('itemReportSearch').value || '').toLowerCase();
+        
+        tbody.innerHTML = '';
+
+        const reportData = Object.keys(inventoryMap)
+            .map(name => {
+                const inventoryInfo = inventoryMap[name];
+                const qtySold = itemQuantities[name] || 0;
+                const totalSales = qtySold * inventoryInfo.price;
+                const initialStockValue = inventoryInfo.stocks * inventoryInfo.price;
+                return {
+                    name,
+                    qtySold,
+                    totalSales,
+                    initialStockValue,
+                    netRevenue: totalSales - initialStockValue // [FIXED] Correct calculation
+                };
+            })
+            .filter(item => !search || item.name.toLowerCase().includes(search))
+            .sort((a, b) => b.totalSales - a.totalSales);
+
+        if (reportData.length === 0) {
+            tbody.innerHTML = '<tr><td colspan="5" class="text-center small-muted p-3">No inventory data found.</td></tr>';
+            return;
+        }
+
+        reportData.forEach(item => {
+            const tr = document.createElement('tr');
+            const netRevenueClass = item.netRevenue < 0 ? 'text-danger' : 'text-success';
+            tr.innerHTML = `
+                <td>${escapeHtml(item.name)}</td>
+                <td class="text-end">${item.qtySold.toLocaleString()}</td>
+                <td class="text-end">${numberToMoney(item.totalSales)}</td>
+                <td class="text-end">${numberToMoney(item.initialStockValue)}</td>
+                <td class="text-end fw-bold ${netRevenueClass}">${numberToMoney(item.netRevenue)}</td>
+            `;
+            tbody.appendChild(tr);
+        });
+    }
+
+    document.getElementById('itemReportSearch').addEventListener('input', renderItemReport);
+
     function renderCharts(){
       const dayKeys = Object.keys(CSV_LINKS);
       const salesByDay = dayKeys.map(k => allRows.filter(r => r.__day === k).reduce((s,r) => s + parseFloatSafe(r.Total||r.total||0), 0));
@@ -446,14 +566,13 @@
         else if(isClaimed(r)) { statusCounts.Claimed++; } 
         else { const status = (r['Order Status']||r.STATUS||'').toLowerCase(); const ongoing = ['ongoing','pending','open','in progress','todo']; if(ongoing.some(k=>status.includes(k))) { statusCounts.Other++; } else { statusCounts.Unclaimed++; } } 
       });
-      const itemsMap = {};
-      allRows.forEach(r => { const itemsRaw = (r.ITEMS||r.Items||'').trim(), qtyVal = parseFloatSafe(r.QTY||r.Qty||1); if(!itemsRaw) return; const candidates = itemsRaw.split(/\s*[,;]\s*/).filter(Boolean); if(candidates.length === 1){ const m = candidates[0].match(/(.+?)\s*[xX×]\s*(\d+)$/); if(m) { itemsMap[m[1].trim()] = (itemsMap[m[1].trim()]||0) + parseInt(m[2],10); } else { itemsMap[candidates[0].trim()] = (itemsMap[candidates[0].trim()]||0) + qtyVal; } } else { candidates.forEach(i => { if(i.trim()) itemsMap[i.trim()] = (itemsMap[i.trim()]||0) + qtyVal; }); } });
+      const itemsMap = calculateItemQuantities();
       const topItemsArr = Object.entries(itemsMap).map(([name,q])=>({name,qty:q})).sort((a,b)=>b.qty-a.qty).slice(0,10);
       const chartConfig = (ctx, type, data, options) => { let chartVar = window[ctx.canvas.id + 'Chart']; if(chartVar) chartVar.destroy(); window[ctx.canvas.id + 'Chart'] = new Chart(ctx, { type, data, options }); };
       chartConfig(document.getElementById('salesByDay').getContext('2d'), 'bar', { labels: dayKeys.map(capitalize), datasets: [{ label: 'Sales', data: salesByDay, backgroundColor: 'rgba(13,110,253,0.7)' }] }, { plugins:{legend:{display:false}}, scales:{y:{beginAtZero:true,ticks:{callback:v=>'₱'+Number(v).toLocaleString()}}} });
       chartConfig(document.getElementById('paymentModeChart').getContext('2d'), 'doughnut', { labels: Object.keys(modeCounts), datasets:[{ data: Object.values(modeCounts), cutout: '60%' }] }, { plugins:{ legend:{position:'bottom', labels:{boxWidth:12,padding:10}} }, layout:{padding:10}, maintainAspectRatio:false });
       chartConfig(document.getElementById('orderStatusChart').getContext('2d'), 'doughnut', { labels: ['Claimed','Unclaimed','Other', 'Cancelled'], datasets: [{ data: [statusCounts.Claimed, statusCounts.Unclaimed, statusCounts.Other, statusCounts.Cancelled], cutout: '60%' }] }, { plugins:{ legend:{position:'bottom', labels:{boxWidth:12,padding:10}} }, layout:{padding:10}, maintainAspectRatio:false });
-      chartConfig(document.getElementById('topItemsChart').getContext('2d'), 'bar', { labels: topItemsArr.map(i=>i.name), datasets: [{ label: 'Qty sold', data: topItemsArr.map(i=>i.qty), backgroundColor: 'rgba(54,162,235,0.85)' }] }, { indexAxis: 'y', plugins:{legend:{display:false}}, scales: { x:{beginAtZero:true, ticks:{precision:0}}, y:{ticks:{autoSkip:false}} }, maintainAspectRatio: false });
+      chartConfig(document.getElementById('topItemsChart').getContext('2d'), 'bar', { labels: topItemsArr.map(i=>i.name), datasets: [{ label: 'Qty sold', data: topItemsArr.map(i=>i.qty), backgroundColor: 'rgba(54,162,253,0.85)' }] }, { indexAxis: 'y', plugins:{legend:{display:false}}, scales: { x:{beginAtZero:true, ticks:{precision:0}}, y:{ticks:{autoSkip:false}} }, maintainAspectRatio: false });
     }
     function startAutoRefresh(){ if(refreshTimer) clearInterval(refreshTimer); refreshTimer = setInterval(loadAllSheetsInternal, 120000); }
   </script>
