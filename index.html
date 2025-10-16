@@ -56,7 +56,7 @@
     .day-filter.active { background-color: var(--accent); color: white; border-color: var(--accent); font-weight: 600; }
 
     .actionable-list-container {
-        max-height: 180px;
+        max-height: 250px;
         overflow-y: auto;
         font-size: 0.9rem;
     }
@@ -338,7 +338,6 @@
     let allRows = [], customersMap = {}, inventoryMap = {};
     let salesChart, paymentChart, orderStatusChart, topItemsChart, refreshTimer;
     
-    // [NEW] Define items to exclude from revenue calculations
     const EXCLUDED_ITEMS = ['Sisig with rice and egg', 'Bagong Bayan'];
     const EXCLUDED_KEYWORDS = ['Hopia'];
 
@@ -420,7 +419,6 @@
 
     function numberToMoney(n){ return '₱' + (Number(n)||0).toLocaleString(undefined,{minimumFractionDigits:2,maximumFractionDigits:2}); }
     function renderSummary(){
-      // [MODIFIED] Filter out excluded items from total sales calculation
       const salesRows = allRows.filter(row => {
           const items = (row.ITEMS || row.Items || '').toLowerCase();
           return !EXCLUDED_ITEMS.some(ex => items.includes(ex.toLowerCase())) && !EXCLUDED_KEYWORDS.some(key => items.includes(key.toLowerCase()));
@@ -436,7 +434,6 @@
       const totalOrders = allRows.length;
       document.getElementById('avgOrderValue').textContent = numberToMoney(totalOrders > 0 ? totalSales / totalOrders : 0);
       
-      // [MODIFIED] Total Items Sold also excludes the items
       const totalItemsSold = salesRows.reduce((s,r) => s + parseFloatSafe(r['QTY']||r.Qty||r.qty||1), 0);
       document.getElementById('totalItemsSold').textContent = totalItemsSold.toLocaleString();
       
@@ -487,12 +484,28 @@
             tbody.appendChild(tr);
         });
     }
+    
+    // [MODIFIED] showCustomerHistory now calculates and displays unpaid utang
     function showCustomerHistory(name) {
         const rows = (customersMap[name] || []).sort((a, b) => new Date(b.Date||b.date||0) - new Date(a.Date||a.date||0));
+        
         document.getElementById('summaryView').style.display = 'none';
         document.getElementById('customerDetails').style.display = 'block';
         document.getElementById('customerTitle').textContent = name;
-        document.getElementById('customerMeta').textContent = `${rows.length} order(s) • Total: ${numberToMoney(rows.reduce((s, r) => s + parseFloatSafe(r.Total||r.total||0), 0))}`;
+
+        // Calculate totals
+        const totalSpent = rows.reduce((s, r) => s + parseFloatSafe(r.Total||r.total||0), 0);
+        const unpaidUtangRows = rows.filter(isUnpaidUtang);
+        const totalUnpaid = unpaidUtangRows.reduce((s, r) => s + parseFloatSafe(r.Total||r.total||0), 0);
+        const unpaidCount = unpaidUtangRows.length;
+        
+        // Build the metadata string
+        let metaHtml = `${rows.length} order(s) • Total: ${numberToMoney(totalSpent)}`;
+        if (totalUnpaid > 0) {
+            metaHtml += ` • <span class="text-danger fw-bold">Unpaid Utang: ${unpaidCount} (${numberToMoney(totalUnpaid)})</span>`;
+        }
+        document.getElementById('customerMeta').innerHTML = metaHtml;
+
         const filterContainer = document.getElementById('dayFilterContainer');
         filterContainer.innerHTML = '';
         ['all', ...Object.keys(CSV_LINKS)].forEach(day => {
@@ -503,6 +516,7 @@
             btn.onclick = () => { filterContainer.querySelectorAll('.day-filter').forEach(b => b.classList.remove('active')); btn.classList.add('active'); populateDetailsTable(rows, day); };
             filterContainer.appendChild(btn);
         });
+        
         populateDetailsTable(rows, 'all');
     }
 
