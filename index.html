@@ -382,11 +382,22 @@
     function isCancelled(row) { const status = (row['Order Status'] || row['STATUS'] || '').toLowerCase(); if (!status) return false; const cancelledKeywords = ['cancel', 'cancelled']; return cancelledKeywords.some(k => status.includes(k)); }
     function isUnclaimed(row) { return !isClaimed(row) && !isCancelled(row); }
     function isUnpaidUtang(row){
-      const ut = (row['Utang Status']||'').toLowerCase(), mode = (row['Mode of Payment']||row['Payment Mode']||'').toLowerCase(), paidDate = (row['Paid Date']||'').trim();
+      const ut = (row['Utang Status']||'').toLowerCase(), 
+            mode = (row['Mode of Payment']||row['Payment Mode']||'').toLowerCase(), 
+            paidDate = (row['Paid Date']||'').trim();
+
+      // **NEW, IMPORTANT CHECK**: If 'Utang Status' explicitly says 'paid', it's NOT unpaid.
+      // This will now be the first thing the code checks.
+      if (ut.includes('paid')) {
+          return false; 
+      }
+
+      // --- The old logic now runs only if the status isn't 'paid' ---
       if(ut && (ut.includes('utang') || ut.includes('unpaid') || ut.includes('owing'))) return true;
       if(mode.includes('utang') && !paidDate) return true;
       const utangStatusIsBlank = !ut.trim();
       if(mode.includes('utang') && isClaimed(row) && utangStatusIsBlank) return true;
+      
       return false;
     }
     function isUtangNotClaimed(row) { const mode = (row['Mode of Payment'] || row['Payment Mode'] || '').toLowerCase(); return mode.includes('utang') && isUnclaimed(row); }
