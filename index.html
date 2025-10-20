@@ -82,6 +82,8 @@
         max-height: 380px; 
         overflow-y: auto;
     }
+    #totalExpenses { color: #dc3545; } /* red for expenses */
+  #netSales { color: #000000; } /* green for net */
   </style>
 </head>
 <body>
@@ -123,16 +125,24 @@
   <main class="container-lg" id="dashboard" style="display:none;">
     <div id="summaryView">
       <div class="row g-3 mb-3">
-        <div class="col-6 col-md-3">
+        <div class="col-6 col-md-3 col-lg-5"> 
           <div class="card p-3 stat-card shadow-sm d-flex align-items-center justify-content-between flex-row">
-            <div class="text-start me-2">
-              <div class="small-muted">Total Sales</div>
-              <div id="totalSales" class="fw-bold fs-5">—</div>
+            <div class="text-start w-100">
+              <div class="d-flex justify-content-between align-items-center small-muted mb-1">
+                <span>Total Sales</span>
+                <span>Total Expenses</span>
+                <span>Net Sales</span>
+              </div>
+              <div class="d-flex justify-content-between align-items-center fw-bold fs-5">
+                <span id="totalSales">₱0.00</span>
+                <span id="totalExpenses" class="text-danger">₱0.00</span>
+                <span id="netSales" class="text-success">₱0.00</span>
+              </div>
             </div>
-            <i class="bi bi-cash-stack fs-3 text-primary"></i>
+            <i class="bi bi-graph-up-arrow fs-3 text-primary ms-3"></i>
           </div>
         </div>
-        <div class="col-6 col-md-3">
+        <div class="col-6 col-lg-2 col-md-3">
           <div class="card p-3 stat-card shadow-sm d-flex align-items-center justify-content-between flex-row">
             <div class="text-start me-2">
               <div class="small-muted">Total Customers</div>
@@ -141,7 +151,7 @@
             <i class="bi bi-people fs-3 text-success"></i>
           </div>
         </div>
-        <div class="col-6 col-md-3">
+        <div class="col-6 col-lg-2 col-md-3">
           <div class="card p-3 stat-card shadow-sm d-flex align-items-center justify-content-between flex-row">
             <div class="text-start me-2">
               <div class="small-muted">Unclaimed Orders</div>
@@ -150,7 +160,7 @@
             <i class="bi bi-inbox fs-3 text-warning"></i>
           </div>
         </div>
-        <div class="col-6 col-md-3">
+        <div class="col-6 col-lg-3 col-md-3">
           <div class="card p-3 stat-card shadow-sm d-flex align-items-center justify-content-between flex-row">
             <div class="text-start me-2">
               <div class="small-muted">Unpaid Utang</div>
@@ -331,11 +341,15 @@
       tuesday: 'https://docs.google.com/spreadsheets/d/e/2PACX-1vTYV5LpeYrDkaCSfqsOKaaibg9xJVOB3E0vMlwjAllLIE1DYPUNZi9s3t3dITcQ1qDAhLV_OCCGOC2u/pub?gid=440834532&single=true&output=csv',
       wednesday: 'https://docs.google.com/spreadsheets/d/e/2PACX-1vTYV5LpeYrDkaCSfqsOKaaibg9xJVOB3E0vMlwjAllLIE1DYPUNZi9s3t3dITcQ1qDAhLV_OCCGOC2u/pub?gid=553554844&single=true&output=csv',
       thursday: 'https://docs.google.com/spreadsheets/d/e/2PACX-1vTYV5LpeYrDkaCSfqsOKaaibg9xJVOB3E0vMlwjAllLIE1DYPUNZi9s3t3dITcQ1qDAhLV_OCCGOC2u/pub?gid=1162168525&single=true&output=csv',
-      friday: 'https://docs.google.com/spreadsheets/d/e/2PACX-1vTYV5LpeYrDkaCSfqsOKaaibg9xJVOB3E0vMlwjAllLIE1DYPUNZi9s3t3dITcQ1qDAhLV_OCCGOC2u/pub?gid=1865614206&single=true&output=csv'
+      friday: 'https://docs.google.com/spreadsheets/d/e/2PACX-1vTYV5LpeYrDkaCSfqsOKaaibg9xJVOB3E0vMlwjAllLIE1DYPUNZi9s3t3dITcQ1qDAhLV_OCCGOC2u/pub?gid=1865614206&single=true&output=csv',
+      // CORRECTED: Added link for Expenses sheet. Replace YOUR_GID_HERE with the GID of your Expenses tab.
+      expenses: 'https://docs.google.com/spreadsheets/d/e/2PACX-1vTYV5LpeYrDkaCSfqsOKaaibg9xJVOB3E0vMlwjAllLIE1DYPUNZi9s3t3dITcQ1qDAhLV_OCCGOC2u/pub?gid=788187299&single=true&output=csv'
     };
     var _0x1a2b = ["YWRtaW4=", "YWRtaW4xMjMhQCM="];
     function _0x3c4d(i){ return atob(_0x1a2b[i]); }
     let allRows = [], customersMap = {}, inventoryMap = {};
+    // CORRECTED: Added a variable to store the total expenses value
+    let totalExpensesValue = 0; 
     let salesChart, paymentChart, orderStatusChart, topItemsChart, refreshTimer;
     
     const EXCLUDED_ITEMS = ['Sisig with rice and egg', 'Bagong Bayan'];
@@ -376,29 +390,74 @@
       return false;
     }
     function isUtangNotClaimed(row) { const mode = (row['Mode of Payment'] || row['Payment Mode'] || '').toLowerCase(); return mode.includes('utang') && isUnclaimed(row); }
-    async function loadAllSheetsInternal(){
-      try{
-        showLoading();
-        const keys = Object.keys(CSV_LINKS);
-        const promises = keys.map(k => fetchCsv(CSV_LINKS[k])
-            .then(rows => rows.map(r=>({__day:k, ...normalizeRow(r)})))
-            .catch(err => { 
-                console.error(`ERROR: Failed to load or parse data for ${k}. Please check the sheet link and format.`, err); 
-                return []; 
-            })
-        );
-        const results = await Promise.all(promises);
-        buildInventoryMap(results); 
-        allRows = results.flat().filter(r => Object.keys(r).length > 1 && (r.NAME || r.Name || r.name));
-        buildCustomersMap();
-        renderSummary();
-        renderActionableLists();
-        renderCustomerList();
-        renderItemReport();
-        renderCharts();
-        const activeName = document.getElementById('customerTitle').textContent;
-        if(activeName) showCustomerHistory(activeName);
-      } catch(err){ console.error('Load error', err); } finally{ hideLoading(); }
+    
+    // CORRECTED: Rewrote this function to handle the Expenses sheet separately.
+    async function loadAllSheetsInternal() {
+        try {
+            showLoading();
+
+            // 1. Fetch the expenses sheet WITHOUT headers to get the raw cell data
+            await new Promise((resolve, reject) => {
+                Papa.parse(CSV_LINKS.expenses, {
+                    download: true,
+                    header: false, // Key change: read data as an array of arrays
+                    complete: (results) => {
+                        const expensesData = results.data;
+                        // Check if Row 19 (index 18) exists
+                        if (expensesData && expensesData.length >= 19) {
+                            const expenseRow = expensesData[18]; // Get the 19th row
+                            // Check if Column K (index 10) exists in that row
+                            if (expenseRow && expenseRow.length >= 11) {
+                                totalExpensesValue = parseFloatSafe(expenseRow[10]); // Get value from K19
+                            } else {
+                                console.warn("Row 19 in the Expenses sheet has fewer than 11 columns.");
+                                totalExpensesValue = 0;
+                            }
+                        } else {
+                            console.warn("The Expenses sheet has fewer than 19 rows.");
+                            totalExpensesValue = 0;
+                        }
+                        resolve(); // Continue after processing expenses
+                    },
+                    error: (err) => {
+                        console.error("Could not load or parse the Expenses sheet.", err);
+                        totalExpensesValue = 0; // Default to 0 on error
+                        resolve(); // Still continue so the rest of the dashboard can load
+                    }
+                });
+            });
+
+            // 2. Fetch all the ORDER sheets as before (with headers)
+            const orderKeys = Object.keys(CSV_LINKS).filter(k => k !== 'expenses');
+            const promises = orderKeys.map(k => fetchCsv(CSV_LINKS[k])
+                .then(rows => rows.map(r => ({ __day: k, ...normalizeRow(r) })))
+                .catch(err => {
+                    console.error(`ERROR: Failed to load or parse data for ${k}.`, err);
+                    return [];
+                })
+            );
+
+            const results = await Promise.all(promises);
+
+            // 3. Process and render everything as usual
+            buildInventoryMap(results);
+            allRows = results.flat().filter(r => Object.keys(r).length > 1 && (r.NAME || r.Name || r.name));
+
+            buildCustomersMap();
+            renderSummary();
+            renderActionableLists();
+            renderCustomerList();
+            renderItemReport();
+            renderCharts();
+
+            const activeName = document.getElementById('customerTitle').textContent;
+            if (activeName) showCustomerHistory(activeName);
+
+        } catch (err) {
+            console.error('An error occurred during the loading process:', err);
+        } finally {
+            hideLoading();
+        }
     }
     window.reloadSheets = async () => { await loadAllSheetsInternal(); };
     function buildCustomersMap(){ customersMap = {}; allRows.forEach(r => { const name = (r['NAME'] || r['Name'] || r['name'] || '').trim(); if(!name) return; if(!customersMap[name]) customersMap[name] = []; customersMap[name].push(r); }); }
@@ -418,12 +477,20 @@
     }
 
     function numberToMoney(n){ return '₱' + (Number(n)||0).toLocaleString(undefined,{minimumFractionDigits:2,maximumFractionDigits:2}); }
+    
+    // CORRECTED: Added logic to calculate Net Sales and display both expenses and net sales.
     function renderSummary(){
       const salesRows = allRows.filter(row => {
           const items = (row.ITEMS || row.Items || '').toLowerCase();
           return !EXCLUDED_ITEMS.some(ex => items.includes(ex.toLowerCase())) && !EXCLUDED_KEYWORDS.some(key => items.includes(key.toLowerCase()));
       });
       const totalSales = salesRows.reduce((s,row) => s + parseFloatSafe(row['Total']||row['total']||row['Cost']||0), 0);
+      
+      // New logic starts here
+      const netSales = totalSales - totalExpensesValue;
+      document.getElementById('totalExpenses').textContent = numberToMoney(totalExpensesValue);
+      document.getElementById('netSales').textContent = numberToMoney(netSales);
+      // New logic ends here
 
       document.getElementById('totalSales').textContent = numberToMoney(totalSales);
       document.getElementById('totalCustomers').textContent = Object.keys(customersMap).length;
@@ -437,11 +504,12 @@
       const totalItemsSold = salesRows.reduce((s,r) => s + parseFloatSafe(r['QTY']||r.Qty||r.qty||1), 0);
       document.getElementById('totalItemsSold').textContent = totalItemsSold.toLocaleString();
       
-      const daySales = Object.keys(CSV_LINKS).map(day => ({ day, sales: allRows.filter(r => r.__day === day).reduce((s,r) => s + parseFloatSafe(r.Total||r.total||0), 0) })).sort((a,b) => b.sales - a.sales);
+      const daySales = ['monday', 'tuesday', 'wednesday', 'thursday', 'friday'].map(day => ({ day, sales: allRows.filter(r => r.__day === day).reduce((s,r) => s + parseFloatSafe(r.Total||r.total||0), 0) })).sort((a,b) => b.sales - a.sales);
       if (daySales.length > 0 && daySales[0].sales > 0) { document.getElementById('busiestDay').innerHTML = `${capitalize(daySales[0].day)} <small class="small-muted">(${numberToMoney(daySales[0].sales)})</small>`; } else { document.getElementById('busiestDay').textContent = '—'; }
       const topSpenders = Object.entries(customersMap).map(([name, orders]) => ({ name, total: orders.reduce((s,r) => s + parseFloatSafe(r.Total||r.total||0),0) })).sort((a,b) => b.total - a.total);
       if (topSpenders.length > 0 && topSpenders[0].total > 0) { document.getElementById('topSpender').innerHTML = `${topSpenders[0].name} <small class="small-muted">(${numberToMoney(topSpenders[0].total)})</small>`; } else { document.getElementById('topSpender').textContent = '—'; }
     }
+    
     function renderActionableLists() {
         const claimedUnpaidContainer = document.getElementById('claimedUnpaidList');
         const utangNotClaimedContainer = document.getElementById('utangNotClaimedList');
@@ -485,7 +553,6 @@
         });
     }
     
-    // [MODIFIED] showCustomerHistory now calculates and displays unpaid utang
     function showCustomerHistory(name) {
         const rows = (customersMap[name] || []).sort((a, b) => new Date(b.Date||b.date||0) - new Date(a.Date||a.date||0));
         
@@ -493,13 +560,11 @@
         document.getElementById('customerDetails').style.display = 'block';
         document.getElementById('customerTitle').textContent = name;
 
-        // Calculate totals
         const totalSpent = rows.reduce((s, r) => s + parseFloatSafe(r.Total||r.total||0), 0);
         const unpaidUtangRows = rows.filter(isUnpaidUtang);
         const totalUnpaid = unpaidUtangRows.reduce((s, r) => s + parseFloatSafe(r.Total||r.total||0), 0);
         const unpaidCount = unpaidUtangRows.length;
         
-        // Build the metadata string
         let metaHtml = `${rows.length} order(s) • Total: ${numberToMoney(totalSpent)}`;
         if (totalUnpaid > 0) {
             metaHtml += ` • <span class="text-danger fw-bold">Unpaid Utang: ${unpaidCount} (${numberToMoney(totalUnpaid)})</span>`;
@@ -508,7 +573,7 @@
 
         const filterContainer = document.getElementById('dayFilterContainer');
         filterContainer.innerHTML = '';
-        ['all', ...Object.keys(CSV_LINKS)].forEach(day => {
+        ['all', 'monday', 'tuesday', 'wednesday', 'thursday', 'friday'].forEach(day => {
             const btn = document.createElement('span');
             btn.className = 'day-filter';
             btn.textContent = capitalize(day);
@@ -586,7 +651,7 @@
     document.getElementById('itemReportSearch').addEventListener('input', renderItemReport);
 
     function renderCharts(){
-      const dayKeys = Object.keys(CSV_LINKS);
+      const dayKeys = ['monday', 'tuesday', 'wednesday', 'thursday', 'friday'];
       const salesByDay = dayKeys.map(k => allRows.filter(r => r.__day === k).reduce((s,r) => s + parseFloatSafe(r.Total||r.total||0), 0));
       const modeCounts = {};
       allRows.forEach(r => { const mode = (r['Mode of Payment']||r['Payment Mode']||'').trim() || 'Unspecified'; modeCounts[mode] = (modeCounts[mode]||0) + parseFloatSafe(r.Total||r.total||0); });
